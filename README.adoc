@@ -1,1 +1,36 @@
-# hugo-deployment-scripts
+# Hugo deployment scripts
+:toc:
+
+This project has it's origin in some quick and dirty scripts
+I wrote to roll out changes made on https://gohugo.io[hugo]
+websites in a quick and uncomplicated way.
+
+## Main idea
+
+The main idea is to run the `deploy.sh` in a linux container,
+or any other kind of Debian server and to let it setup the
+hugo site completely without the need to touch the container again.
+
+## Usage
+
+Simply run:
+
+    wget https://github.com/MarcMocker/hugo-deployment-scripts/raw/main/deploy.sh | bash deploy.sh
+
+in the cli of the container.
+
+The script is going to ask you for the upstream repository with the hugo project (`clone` > `SSH`)
+and guides you through any further steps if necessary.
+
+Works even with private repositorys.
+
+## Continous delivery
+
+Moreover the script sets up a crontab (in `etc/crontab`) to check every two minutes for changes on
+the upstream repository and rebuilds the site if necessary.
+
+## Usecase
+
+If your server is located behind a proxy and hidden from outside by a
+firewall and Github actions cannot reach it. Else Github actions might
+be more suitable and less resource intense for you.
