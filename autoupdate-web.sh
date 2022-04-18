@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
 ROOT=/root
-REPO=/root/homepage
+REPO=$1
 WEBROOT=/var/www/html
-LOG=/tmp/autoupdate-web.log
+LOG=/tmp/hugo-autodeployment/autoupdate-web.log
 WELL_KNOWN_DIR="$REPO/content/well-known"
+
+# continous delivery
+LOCAL_AUTOUPDATE_SCRIPT=/usr/local/bin/autoupdate-web
+UPSTREAM_AUTOUPDATE_SCRIPT=https://raw.githubusercontent.com/MarcMocker/hugo-deployment-scripts/main/autoupdate-web.sh
+
 
 function info {
     echo -e "\e[32m[info] $*\e[39m";
@@ -17,11 +22,9 @@ function log {
 function update_script() {
     renice "$NICE" $BASHPID # lowers the priority by NICE value; scope: until the end of the function
 
-    info updating update script >> $LOG
-    if [ -f $REPO/autoupdate-web.sh ]; then
-        mv $REPO/autoupdate-web.sh $ROOT/autoupdate-web
-        chmod +x $ROOT/autoupdate-web
-    fi
+    log updating update script
+    curl "$UPSTREAM_AUTOUPDATE_SCRIPT" | tee $LOCAL_AUTOUPDATE_SCRIPT || log failed to update autoupdate script
+    chmod +x $LOCAL_AUTOUPDATE_SCRIPT
 }
 
 function get_new_version() {
@@ -37,8 +40,7 @@ function get_new_version() {
         git pull
     else
         log cloning REPO
-        cd $ROOT || log "impossible state reached"
-        git clone git@github.com:MarcMocker/homepage.git >> $LOG
+        git clone git@github.com:MarcMocker/homepage.git $REPO >> $LOG
     fi
 }
 

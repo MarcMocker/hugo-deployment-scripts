@@ -15,9 +15,12 @@ SSH_USER=git
 SSH_HOST=github.com
 
 # hugo project
-DEPLOY_REPOSITORY=empty
-HUGO_LOCAL_REPOSITORY=/tmp/hugo-project
+HUGO_LOCAL_REPOSITORY=/tmp/hugo-autodeployment
 HUGO_UPSTREAM_REPOSITORY=empty
+
+# continous delivery
+LOCAL_AUTOUPDATE_SCRIPT=/usr/local/bin/autoupdate-web
+UPSTREAM_AUTOUPDATE_SCRIPT=https://raw.githubusercontent.com/MarcMocker/hugo-deployment-scripts/main/autoupdate-web.sh
 
 
 #########################################################
@@ -96,6 +99,9 @@ function make_hugo_project_accessible() {
     read -p "Please enter the upstream repositorys ssh address: " repo
     HUGO_UPSTREAM_REPOSITORY=$repo
 
+    read -p "Please enter the local repositorys name: " repo
+    HUGO_LOCAL_REPOSITORY=$HUGO_LOCAL_REPOSITORY/$repo
+
     info "Trying to clone $HUGO_UPSTREAM_REPOSITORY..."
     git clone "$HUGO_UPSTREAM_REPOSITORY" "$HUGO_LOCAL_REPOSITORY" > $NULL 2> $NULL || handle_clone_failed
 
@@ -104,7 +110,17 @@ function make_hugo_project_accessible() {
 }
 
 function setup_cd_script() {
-    sleep 10
+    # download script
+    info "Loading dontinous delivery script..."
+    curl "$UPSTREAM_AUTOUPDATE_SCRIPT" | tee $LOCAL_AUTOUPDATE_SCRIPT || error "failed to fetch CD script"
+    chmod +x $LOCAL_AUTOUPDATE_SCRIPT || error "failed to make CD script executable"
+
+    # setup crontab
+    info "Generating crontab entry..."
+    echo "*/2 *   * * *   root    $LOCAL_AUTOUPDATE_SCRIPT $HUGO_LOCAL_REPOSITORY $HUGO_UPSTREAM_REPOSITORY" >> /etc/crontab
+    info "Initially deploying the website..."
+    $LOCAL_AUTOUPDATE_SCRIPT $HUGO_LOCAL_REPOSITORY $HUGO_UPSTREAM_REPOSITORY
+    info done.
 }
 
 #########################################################
@@ -114,7 +130,7 @@ clear # just for estetics
 
 #install_dependencies
 #create_ssh_keys_if_not_available
-#make_hugo_project_accessible
+make_hugo_project_accessible
 
 setup_cd_script
 
