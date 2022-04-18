@@ -15,7 +15,7 @@ hugo site completely without the need to touch the container again.
 
 Simply run:
 
-    wget https://github.com/MarcMocker/hugo-deployment-scripts/raw/main/deploy.sh | bash deploy.sh
+    wget https://github.com/MarcMocker/hugo-deployment-scripts/raw/main/deploy.sh && bash deploy.sh
 
 in the cli of the container.
 
