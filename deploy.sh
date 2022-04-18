@@ -7,7 +7,7 @@ NULL=/dev/null
 LOG=deploy.sh.log
 
 # install dependencies
-REQUIRED_PACKAGES="git apache2 hugo"
+REQUIRED_PACKAGES="git apache2 hugo curl"
 
 # ssh
 PUBLIC_SSH_CERT=$HOME/.ssh/id_rsa.pub
@@ -15,7 +15,8 @@ SSH_USER=git
 SSH_HOST=github.com
 
 # hugo project
-HUGO_LOCAL_REPOSITORY=/tmp/hugo-autodeployment
+HUGO_LOCAL_REPOSITORY_LOCATION=/tmp/hugo-autodeployment
+HUGO_LOCAL_REPOSITORY=""
 HUGO_UPSTREAM_REPOSITORY=empty
 
 # continous delivery
@@ -53,25 +54,25 @@ function install_dependencies(){
     apt-get update > $NULL || error update failed
 
     info upgrading system...
-    apt-get full-upgrade -y | tee $NULL || error full upgrade failed
+    apt-get full-upgrade -y > $NULL 2> $NULL || error "full upgrade failed"
 
     info installing dependencies...
-    apt-get install -y "$REQUIRED_PACKAGES" | tee $NULL  || error installation of required packages failed
+    apt-get install -y $REQUIRED_PACKAGES > $NULL 2> $NULL  || error "installation of required packages failed"
 
 }
 
 function create_ssh_keys_if_not_available(){
     # check if ssh-keys exist
-    if [ ! -f "$HOME/.ssh/id_rsa.pub" ]; then
-        info No existing SSH keys detected. Creating new key pair...
+    if [ ! -f $HOME/.ssh/id_rsa.pub ]; then
+        warn No existing SSH keys detected. Creating new key pair...
         ssh-keygen -b 2048 -t rsa -f "$HOME"/.ssh/id_rsa -q -N ""
 
     else
-        info Existing SSH key detected.
+        warn Existing SSH key detected.
     fi
 
     # avoid giving "yes" confirmation adding github as new known host
-    ssh -o StrictHostKeyChecking=no -l "git" "github.com" 2> /dev/null
+    ssh -o StrictHostKeyChecking=no -l "$SSH_USER" "$SSH_HOST" 2> /dev/null
 }
 
 function ask_to_add_deployment_key_to_upstream_repo() {
@@ -92,35 +93,52 @@ function handle_clone_failed() {
     ask_to_add_deployment_key_to_upstream_repo
 
     info cloning again...
-    git clone "$HUGO_UPSTREAM_REPOSITORY" "$HUGO_LOCAL_REPOSITORY" > $NULL 2> $NULL || error "Clone failed again, aborting."
+    git clone "$HUGO_UPSTREAM_REPOSITORY" "$HUGO_LOCAL_REPOSITORY_LOCATION/$HUGO_LOCAL_REPOSITORY" > $NULL 2> $NULL || error "Clone failed again, aborting."
 }
 
 function make_hugo_project_accessible() {
-    read -p "Please enter the upstream repositorys ssh address: " repo
+    read -p "Please enter the ssh address of the upstream repository: " repo
     HUGO_UPSTREAM_REPOSITORY=$repo
 
-    read -p "Please enter the local repositorys name: " repo
-    HUGO_LOCAL_REPOSITORY=$HUGO_LOCAL_REPOSITORY/$repo
+    read -p "Please enter the name of the local repository: " repo
+    HUGO_LOCAL_REPOSITORY=$repo
 
     info "Trying to clone $HUGO_UPSTREAM_REPOSITORY..."
-    git clone "$HUGO_UPSTREAM_REPOSITORY" "$HUGO_LOCAL_REPOSITORY" > $NULL 2> $NULL || handle_clone_failed
+    rm -r $HUGO_LOCAL_REPOSITORY_LOCATION/$HUGO_LOCAL_REPOSITORY > $NULL 2> $NULL
+    git clone "$HUGO_UPSTREAM_REPOSITORY" "$HUGO_LOCAL_REPOSITORY_LOCATION/$HUGO_LOCAL_REPOSITORY" > $NULL 2> $NULL || handle_clone_failed
 
-    rm -r $HUGO_LOCAL_REPOSITORY
+    rm -r "$HUGO_LOCAL_REPOSITORY_LOCATION/$HUGO_LOCAL_REPOSITORY"
     info Upstream repository is accessible!
 }
 
 function setup_cd_script() {
     # download script
-    info "Loading dontinous delivery script..."
-    curl "$UPSTREAM_AUTOUPDATE_SCRIPT" | tee $LOCAL_AUTOUPDATE_SCRIPT || error "failed to fetch CD script"
+    info "Loading continous delivery script..."
+    curl "$UPSTREAM_AUTOUPDATE_SCRIPT" | tee $LOCAL_AUTOUPDATE_SCRIPT > $NULL || error "failed to fetch CD script"
     chmod +x $LOCAL_AUTOUPDATE_SCRIPT || error "failed to make CD script executable"
 
     # setup crontab
-    info "Generating crontab entry..."
-    echo "*/2 *   * * *   root    $LOCAL_AUTOUPDATE_SCRIPT $HUGO_LOCAL_REPOSITORY $HUGO_UPSTREAM_REPOSITORY" >> /etc/crontab
+    cat /etc/crontab | grep "$HUGO_LOCAL_REPOSITORY" > $NULL 2> $NULL
+    if [ $? != 0 ]; then
+        info "Generating crontab entry..."
+        echo "*/2 *   * * *   root    $LOCAL_AUTOUPDATE_SCRIPT $HUGO_LOCAL_REPOSITORY_LOCATION/$HUGO_LOCAL_REPOSITORY $HUGO_UPSTREAM_REPOSITORY" >> /etc/crontab
+    else
+        warn "An existing crontab for $HUGO_LOCAL_REPOSITORY was found."
+    fi
+
     info "Initially deploying the website..."
-    $LOCAL_AUTOUPDATE_SCRIPT $HUGO_LOCAL_REPOSITORY $HUGO_UPSTREAM_REPOSITORY
+    $LOCAL_AUTOUPDATE_SCRIPT "$HUGO_LOCAL_REPOSITORY_LOCATION/$HUGO_LOCAL_REPOSITORY" "$HUGO_UPSTREAM_REPOSITORY" > $LOG 2> $LOG
     info done.
+}
+
+function confirm_site_is_online() {
+    # if the localhost shows still the default page
+    info "Validating the new site is served from the webserver..."
+    if [ $(curl localhost | grep "Apache2" | grep "Default Page" > $NULL 2> $NULL) ]; then
+        error "The webserver still serves the default page!\n[error] Validation failed, aborting."
+    else
+        info "Success."
+    fi
 }
 
 #########################################################
@@ -128,72 +146,11 @@ function setup_cd_script() {
 # workflow ##############################################
 clear # just for estetics
 
-#install_dependencies
-#create_ssh_keys_if_not_available
+install_dependencies
+create_ssh_keys_if_not_available
 make_hugo_project_accessible
-
 setup_cd_script
-
+confirm_site_is_online
 
 #########################################################
 exit 0
-
-# asking if ssh-key is needed for deployment
-read -p "Is the Repository you are going to use private? [Y/n]: " yn
-case $yn in
-    [Nn]* ) ;; # do nothing
-    * ) ask_to_add_deployment_key_to_upstream_repo;;
-esac
-
-
-
-
-exit 0
-    info ""
-    info "DEFAULT: update on boot             [1]"
-    info "OPTION:  update daily at 1am        [2]"
-    info "OPTION:  update never automatically [3]"
-    info ""
-
-    read -r -p "> "
-    UPDATE_POLICY=$REPLY
-    case $UPDATE_POLICY in
-        [1]* ) echo @reboot root /root/autoupdate.sh >> /etc/crontab && info-log "selected option [1]";;
-        [2]* ) echo "0 1 * * * /root/autoupdate.sh > /dev/null" >> /etc/crontab && info-log "selected option [2]";;
-        [3]* ) info-log "selected option [3] \n[info] This requires patching the system manually";;
-        * ) echo @reboot root /root/autoupdate.sh >> /etc/crontab && info-log "selected default [1]";;
-    esac
-
-
-    root@portfolio-page:~# history
-        1  apt update && apt full-upgrade -y
-        2  ssh-keygen
-        3  cat .ssh/id_rsa.pub
-        4  apt install git apache2 tree -y
-        5  git clone git@github.com:MarcMocker/homepage.git
-        6  tree
-        7  cd homepage/
-        8  git pull
-        9  cp autoupdate-web.sh ../autoupdate-web.sh
-       10  cd ..
-       11  ll
-       12  chmod +x autoupdate-web.sh
-       13  echo "*/2 *   * * *   root    /root/autoupdate-web" >> /etc/crontab
-       14  ls /tmp/
-       15  cat /tmp/autoupdate-web.log
-       16  watch cat /tmp/autoupdate-web.log
-       17  apt install hugo
-       18  watch cat /tmp/autoupdate-web.log
-       19  cat /etc/crontab
-       20  ll
-       21  watch cat /tmp/autoupdate-web.log
-       22  ./autoupdate-web.sh
-       23  watch cat /tmp/autoupdate-web.log
-       24  cat /tmp/autoupdate-web.log
-       25  curl localhost
-       26  wget -qO- localhost
-       27  wget -qO- localhost | grep marc
-       28  reboot now
-       29  cat /tmp/autoupdate-web.log
-       30  history
-    root@portfolio-page:~#
