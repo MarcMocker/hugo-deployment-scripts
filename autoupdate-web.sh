@@ -3,6 +3,7 @@
 ROOT=/root
 REPO=$1
 WEBROOT=/var/www/html
+OPERATIONS_DIR=/tmp/hugo-autodeployment
 LOG=/tmp/hugo-autodeployment/autoupdate-web.log
 WELL_KNOWN_DIR="$REPO/content/well-known"
 
@@ -39,6 +40,7 @@ function get_new_version() {
         log pulling REPO
         git pull
     else
+        mkdir $OPERATIONS_DIR
         log cloning REPO
         git clone git@github.com:MarcMocker/homepage.git $REPO >> $LOG
     fi
