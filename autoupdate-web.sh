@@ -57,6 +57,7 @@ function rebuild_website() {
     rsync -avur --delete "$REPO/public/" "$WEBROOT"
 }
 
+mkdir -p /tmp/hugo-autodeployment
 date >> $LOG
 
 if [[ $(get_new_version | grep "Already up to date.") ]]; then # build new version of website if there are updates
