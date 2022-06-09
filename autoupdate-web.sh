@@ -2,6 +2,7 @@
 
 ROOT=/root
 REPO=$1
+UPSTREAM_REPO=$2
 WEBROOT=/var/www/html
 OPERATIONS_DIR=/tmp/hugo-autodeployment
 LOG=/tmp/hugo-autodeployment/autoupdate-web.log
@@ -42,7 +43,7 @@ function get_new_version() {
     else
         mkdir $OPERATIONS_DIR
         log cloning REPO
-        git clone git@github.com:MarcMocker/homepage.git $REPO >> $LOG
+        git clone $UPSTREAM_REPO $REPO >> $LOG
     fi
 }
 
